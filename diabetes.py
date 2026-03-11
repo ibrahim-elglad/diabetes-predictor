@@ -2,30 +2,60 @@ import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
-from sklearn.ensemble import RandomForestClassifier 
-from sklearn.metrics import accuracy_score    
-import pickle                             
+from xgboost import XGBClassifier # الموديل الأقوى
+from sklearn.metrics import classification_report, accuracy_score
 import streamlit as st
+import pickle
 
-df = pd.read_csv('diabetes.csv')
+# 1. تحميل ومعالجة البيانات باحترافية
+@st.cache_data
+def load_and_optimize_data():
+    df = pd.read_csv('diabetes.csv')
+    
+    # التعامل مع القيم الصفرية كقيم مفقودة
+    cols_to_fix = ['Glucose', 'BloodPressure', 'SkinThickness', 'BMI', 'Insulin']
+    df[cols_to_fix] = df[cols_to_fix].replace(0, np.nan)
+    
+    # ملء القيم بناءً على الوسيط لكل فئة (صحياً أدق بكتير)
+    for col in cols_to_fix:
+        df[col] = df[col].fillna(df.groupby('Outcome')[col].transform('median'))
 
-cols_to_fix = ['Glucose', 'BloodPressure', 'SkinThickness', 'BMI', 'Insulin']
-df[cols_to_fix] = df[cols_to_fix].replace(0, np.nan)
-df.fillna(df.mean(), inplace=True)
+    X = df.drop('Outcome', axis=1)
+    y = df['Outcome']
+    
+    return X, y
 
-X = df.drop('Outcome', axis=1)
-y = df['Outcome']
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+X, y = load_and_optimize_data()
+
+# 2. تقسيم البيانات وتوسيعها
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
 
 scaler = StandardScaler()
 X_train_scaled = scaler.fit_transform(X_train)
 X_test_scaled = scaler.transform(X_test)
 
-model = RandomForestClassifier(n_estimators=100, random_state=42)
+# 3. بناء موديل XGBoost مع إعدادات الدقة العالية
+# 
+model = XGBClassifier(
+    n_estimators=200,
+    max_depth=5,
+    learning_rate=0.05,
+    subsample=0.8,
+    colsample_bytree=0.8,
+    scale_pos_weight=1.8, # لموازنة البيانات
+    random_state=42,
+    use_label_encoder=False,
+    eval_metric='logloss'
+)
+
 model.fit(X_train_scaled, y_train)
 
+# حساب الدقة للـ Terminal
 predictions = model.predict(X_test_scaled)
-print(f"Model Accuracy: {accuracy_score(y_test, predictions) * 100:.2f}%")
+acc = accuracy_score(y_test, predictions)
+print(f"New Optimized Accuracy: {acc * 100:.2f}%")
+print(f"New Optimized Accuracy: {classification_report(y_test, predictions)}")
+
 
 with open('diabetes_model.pkl', 'wb') as f:
     pickle.dump(model, f)
@@ -55,6 +85,9 @@ with col2:
     dpf = st.number_input("Diabetes Pedigree Function", 0.0, 2.42, 0.47)
     age = st.slider("Age", 21, 81, 33)
 
+
+
+
 if st.button("Run Diagnostic Analysis"):
     input_data = np.array([[preg, glu, bp, sk, ins, bmi, dpf, age]])
     
@@ -70,4 +103,16 @@ if st.button("Run Diagnostic Analysis"):
         st.success(f"✅ Negative Result: Low risk of diabetes (Probability: {prob[0][0]*100:.1f}%)")
 
     st.write("### Review Entered Data:")
-    st.table(pd.DataFrame(input_data, columns=X.columns))
+    st.table(pd.DataFrame(input_data, columns=X.columns))    
+
+
+
+
+
+
+
+
+
+
+
+ 
